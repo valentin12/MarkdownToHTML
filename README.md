@@ -1,5 +1,5 @@
 # Markdown to HTML
-Regular expression based Markdown to HTML parser written in Python 3.
+Regular expression Markdown to HTML parser written in Python 3.
 It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/)
 
 ### Supported
@@ -47,9 +47,10 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 * `parser/`: The Python module
   * `parser/blocks.py`: Container blocks and leaf blocks (including regexes and functions)
   * `parser/inlines.py`: Inline
+  * `parser/gfm.py`: Contains `GFMParser` class
 
 ## Server
-A basic flask server can be used to serve a website for dynamically typing and converting the text.
+A basic flask server can be used to serve a website for converting Markdown to HTML in realtime.
 It will start on http://0.0.0.0:8082
 
 ## Tests
