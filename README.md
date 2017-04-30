@@ -53,6 +53,11 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 A basic flask server can be used to serve a website for converting Markdown to HTML in realtime.
 It will start on http://0.0.0.0:8082
 
+```
+$ pip3 install flask
+$ python3 server.py
+```
+
 ## Tests
 The results can be tested with the [CommonMark examples](https://github.com/jgm/CommonMark).
 
