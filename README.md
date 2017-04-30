@@ -37,6 +37,14 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 
     $ python3 convert.py input.md
 
+## Code overview
+* `convert.py`: Executable program to convert a single .md file using `GFMParser`
+* `server.py`: Server
+* `templates/`: Templates for the server
+* `parser/`: The Python module
+  * `parser/blocks.py`: Container blocks and leaf blocks (including regexes and functions)
+  * `parser/inlines.py`: Inline
+
 ## Server
 A basic flask server can be used to serve a website for dynamically typing and converting the text.
 It will start on http://0.0.0.0:8082
