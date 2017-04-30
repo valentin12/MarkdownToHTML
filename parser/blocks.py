@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 from .inlines import InlineParser
+import html
 
 
 class Block(object):
@@ -175,7 +176,7 @@ class IndentedCodeBlock(LeafBlock):
         while lines and not lines[-1].strip():
             lines = lines[:-1]
         # Dont't parse as inline
-        return self._TEMPLATE.format(content="".join(lines), **self.__dict__)
+        return self._TEMPLATE.format(content=html.escape("".join(lines)), **self.__dict__)
 
 
 class FencedCodeBlock(LeafBlock):
@@ -217,7 +218,7 @@ class FencedCodeBlock(LeafBlock):
 
     def get_html(self):
         # Don't parse as inline
-        return self._TEMPLATE.format(content="".join(self.lines), class_str=self.class_str)
+        return self._TEMPLATE.format(content=html.escape("".join(self.lines)), class_str=self.class_str)
 
 
 class HTMLBlock(LeafBlock):

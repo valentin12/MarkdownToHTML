@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 import string
+import html
 
 
 class InlineParser(object):
@@ -28,6 +29,7 @@ class InlineParser(object):
         parts = InlineParser.compute(InlineParser.get_code_spans, [], parts)
         parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan], parts)
         parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan], parts)
+        parts = InlineParser.compute(InlineParser.unescape, [CodeSpan], parts)
         return "".join([e.get_html() for e in parts])
 
     @staticmethod
@@ -50,7 +52,7 @@ class InlineParser(object):
     @staticmethod
     def get_code_spans(text):
         """Get code spans"""
-        code = re.compile(r"[\s\S]*?(?P<tick>`+)(?P<content>[\s\S]*?)(?<=[^`])\1((?!`)|$)")
+        code = re.compile(r"[\s\S]*?(?=[^`]|\A)(?P<tick>`+)(?!`)(?P<content>[\s\S]*?)(?<=[^`])\1((?!`)|$)")
         pos = 0
         parts = []
         while pos < len(text):
@@ -84,6 +86,10 @@ class InlineParser(object):
                 parts.append(Text(text[pos:]))
                 break
         return parts
+
+    @staticmethod
+    def unescape(text):
+        return [Text(re.sub(r"\\(?P<char>[{}])".format(re.escape(string.punctuation)), r"\g<char>", text))]
 
     @staticmethod
     def get_emphasis(text):
@@ -246,4 +252,4 @@ class CodeSpan(Inline):
     _TEMPLATE = "<code>{content}</code>"
 
     def get_html(self):
-        return self._TEMPLATE.format(content="".join([c.get_html() for c in self.children]))
+        return self._TEMPLATE.format(content=html.escape("".join([c.get_html() for c in self.children])).strip())

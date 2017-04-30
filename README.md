@@ -12,12 +12,14 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 * Block Quotes
 * Lists
 * Emphasis (partly)
+* Code spans
+* Hard line breaks
+* Escaped characters (partly)
 
 ### Not Supported
-* All inlines except for emphasis
+* All inlines not named above
 * HTML blocks
 * Link reference definitions
-* Escaped characters
 * Extensions
 
 ## Usage
