@@ -1,6 +1,5 @@
 #!/usr/bin/python3
-import re
-from .elements import *
+from .blocks import *
 
 
 class GFMParser():
@@ -19,6 +18,7 @@ class GFMParser():
         lines = [l + "\n" for l in lines[:-1]] + [lines[-1]]
         for line in lines:
             self.parse_line(line)
+        return self
 
     def parse_line(self, line):
         while True:

@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import re
+from .inlines import InlineParser
 
 
 class Block(object):
@@ -75,7 +76,7 @@ class LeafBlock(Block):
         lines = self.lines
         while lines and not lines[-1].strip():
             lines = lines[:-1]
-        return self._TEMPLATE.format(content="".join(lines), **self.__dict__)
+        return self._TEMPLATE.format(content=InlineParser.parse("".join(lines)), **self.__dict__)
 
 
 # Leaf blocks
@@ -137,6 +138,12 @@ class IndentedCodeBlock(LeafBlock):
 
     def close_check(self, line, line_number, force=False):
         self.close_next = re.compile(self._END_REGEX).match(line) is not None or force
+
+    def get_html(self):
+        lines = self.lines
+        while lines and not lines[-1].strip():
+            lines = lines[:-1]
+        return self._TEMPLATE.format(content="".join(lines), **self.__dict__)
 
 
 class FencedCodeBlock(LeafBlock):
@@ -234,9 +241,9 @@ class Paragraph(LeafBlock):
     def get_html(self):
         if self.setextheading:
             return "<h{number}>{content}</h{number}>\n".format(number=1 if "=" in self.lines[-1] else 2,
-                                                               content="".join(self.lines[:-1]).strip())
+                                                               content=InlineParser.parse("".join(self.lines[:-1]).strip()))
         else:
-            return self._TEMPLATE.format(content="".join(self.lines).strip())
+            return self._TEMPLATE.format(content=InlineParser.parse("".join(self.lines).strip()))
 
 
 # Container blocks
@@ -366,7 +373,6 @@ class List(ContainerBlock):
                         # Empty line at end of list
                         return True
         return loose
-
 
 
 class OrderedList(List):
