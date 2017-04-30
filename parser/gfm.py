@@ -21,15 +21,25 @@ class GFMParser():
         return self
 
     def parse_line(self, line):
+        """
+        Parse single line in context of previous lines in document
+        """
         while True:
+            # Convert tabs to spaces for finding block structure
+            line_untabbed = Document.tabs_to_spaces(line, -1, 0)
             # One or more blocks may be closed
-            line_untabbed = Document.tab_to_spaces(line, -1, 0)
             self.document.close_check(line_untabbed, self.line_number)
+            # Get last open block and the line without indentation
             last_open, remainder = self.document.get_last_open(line_untabbed)
+            # Get last, maybe closed, block
             last = self.document.get_last()
+            # Calc length of indentation
             to_strip = len(line_untabbed) - len(remainder)
-            remainder = Document.tab_to_spaces(line, to_strip, 0)[to_strip:]
+            # Get remainder, but only convert tabs needed as spaces
+            remainder = Document.tabs_to_spaces(line, to_strip, 0)[to_strip:]
+            # Get a newly started block if there is any
             block = self.document.new_block(last_open, remainder, self.line_number, last, stripped=to_strip)
+            # If no indentation is there anymore, the line could be a lazy continuation line
             self.lazy = to_strip == 0 and (self.lazy or self.last_strip > 0)
             self.last_strip = to_strip
             if type(last) is FencedCodeBlock and not last.closed:
@@ -42,20 +52,22 @@ class GFMParser():
                 break
             if block is None and not remainder.strip() and \
                     type(last_open) not in [BlockQuote, FencedCodeBlock, IndentedCodeBlock]:
-                # # Loose or tight list
+                # Empty line, if it's in a list the list could be loose
+                # Find last open list
                 last_list = self.document.get_last_open_types([BulletList, OrderedList])
                 if last_list and \
                         (len(last_list.children[-1].children) or last_list.children[-1].start_line < self.line_number):
                     if last_list.loose < 0:
+                        # List has been tight, set number of current child to indicate point of blank line
                         last_list.loose = sum([len(c.children) for c in last_list.children])
                     self.document.close_marked()
                     break
             if self.lazy and not remainder.strip() and not type(last_open) in [FencedCodeBlock, IndentedCodeBlock]:
-                # Empty continuation line not allowed
+                # Empty continuation line not possible -> discard
                 self.document.close_marked()
                 break
             if block is not None and type(block) is not ListItem and type(last_open) in [BulletList, OrderedList]:
-                # Close list if created block is no list item
+                # Close list if newly created block is no list item
                 while type(last_open) in [BulletList, OrderedList]:
                     last_open.close_check(line, self.line_number, force=True)
                     last_open.close_marked()
@@ -66,7 +78,7 @@ class GFMParser():
                 last.add_line(remainder, to_strip, self.lazy)
                 break
             else:
-                # If new block starts, create it and close open
+                # new block starts, create it and close open
                 self.document.close_marked()
                 last_open.add(block)
                 if not issubclass(type(block), ContainerBlock):

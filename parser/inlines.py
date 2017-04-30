@@ -6,21 +6,8 @@ import string
 class InlineParser(object):
     @staticmethod
     def parse(input_string):
-        code = re.compile(r"[\s\S]*?(?P<tick>`+)(?P<content>[\s\S]*?)(?<=[^`])\1((?!`)|$)")
-        pos = 0
-        parts = []
-        while pos < len(input_string):
-            m = code.match(input_string, pos)
-            if m is not None:
-                r = m.groupdict()
-                if pos != m.start('tick'):
-                    parts.append(Text(input_string[pos:m.start('tick')]))
-                parts.append(CodeSpan(r['content']))
-                pos = m.end()
-            else:
-                parts.append(Text(input_string[pos:]))
-                break
         out = []
+        parts = InlineParser.get_code_spans(input_string)
         for part in parts:
             if type(part) in [Text]:
                 out.extend(InlineParser.get_emphasis(part.text))
@@ -31,10 +18,31 @@ class InlineParser(object):
 
     @staticmethod
     def look_for_link_or_img():
+        # TODO: not supported yet
         pass
 
     @staticmethod
+    def get_code_spans(text):
+        """Get code spans"""
+        code = re.compile(r"[\s\S]*?(?P<tick>`+)(?P<content>[\s\S]*?)(?<=[^`])\1((?!`)|$)")
+        pos = 0
+        parts = []
+        while pos < len(text):
+            m = code.match(text, pos)
+            if m is not None:
+                r = m.groupdict()
+                if pos != m.start('tick'):
+                    parts.append(Text(text[pos:m.start('tick')]))
+                parts.append(CodeSpan(r['content']))
+                pos = m.end()
+            else:
+                parts.append(Text(text[pos:]))
+                break
+        return parts
+
+    @staticmethod
     def get_emphasis(text):
+        """Get emphasis"""
         delimiter_stack = []
         delimiter_regex = re.compile(r"[\s\S]*?(?P<pre>[^_*\s\]!\[]?)(?P<deli>[*]+|[_]+|\[|!\[|])(?P<post>\S?)")
         pos = 0

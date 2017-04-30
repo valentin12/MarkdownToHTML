@@ -4,9 +4,8 @@ from .inlines import InlineParser
 
 
 class Block(object):
-    """Interface for all Markdown elements"""
+    """Interface for all Markdown blocks"""
     _TEMPLATE = ""
-    REGEX = re.compile("")
     _END_REGEX = ""
     START_REGEX = re.compile("")
 
@@ -18,6 +17,7 @@ class Block(object):
 
     @classmethod
     def starts(cls, last_open, line, line_number, last):
+        """Returns whether this black could start with that line"""
         return cls.START_REGEX.match(line) is not None
 
     @classmethod
@@ -25,21 +25,26 @@ class Block(object):
         return cls()
 
     def get_html(self):
+        """Return HTML representation as text"""
         return self._TEMPLATE.format(**self.__dict__)
 
     def get_end_regex(self):
+        """Return the compiled regular expression that matches if a line closes this block"""
         return re.compile(self._END_REGEX)
 
     def close_check(self, line, line_number, force=False):
+        """Mark blocks that will be closed by that line"""
         pass
 
     def strip_line(self, line):
         return line
 
     def add_line(self, line, stripped, lazy=False):
+        """Add text line to this block"""
         self.lines.append(line)
 
     def get_last_open(self, line):
+        """Get last open block (self or child)"""
         cur_line = self.strip_line(line)
         line = cur_line
         last = self
@@ -49,6 +54,7 @@ class Block(object):
         return last, line
 
     def get_last_open_types(self, block_types):
+        """Get the last open block of one of the specified types"""
         ret = self if type(self) in block_types and not (self.closed or self.close_next) else None
         for child in self.children:
             if not child.closed or child.close_next:
@@ -57,9 +63,11 @@ class Block(object):
         return ret
 
     def get_last(self):
+        """Get last block"""
         return self if not self.children else self.children[-1].get_last()
 
     def close_marked(self):
+        """Close the blocks marked by close_check"""
         if self.close_next:
             self.closed = True
         for child in self.children:
@@ -68,6 +76,7 @@ class Block(object):
 
 
 class LeafBlock(Block):
+    """Interface for all leaf blocks (don't contain other blocks)"""
     def close_check(self, line, line_number, force=False):
         self.close_next = True
         return line
@@ -75,7 +84,9 @@ class LeafBlock(Block):
     def get_html(self):
         lines = self.lines
         while lines and not lines[-1].strip():
+            # Remove trailing empty lines
             lines = lines[:-1]
+        # Parse text as inline
         return self._TEMPLATE.format(content=InlineParser.parse("".join(lines)), **self.__dict__)
 
 
@@ -108,8 +119,7 @@ class ATXHeading(LeafBlock):
 
 class SetextHeading(LeafBlock):
     _TEMPLATE = "<h{number}>{content}</{number}>"
-    REGEX = re.compile(r"^ {0,3}([=\-])\1* *\n?$")
-    START_REGEX = REGEX
+    START_REGEX = re.compile(r"^ {0,3}([=\-])\1* *\n?$")
 
 
 class IndentedCodeBlock(LeafBlock):
@@ -119,6 +129,7 @@ class IndentedCodeBlock(LeafBlock):
 
     @classmethod
     def starts(cls, last_open, line, line_number, last):
+        # Cannot interrupt paragraphs, list items go first
         return IndentedCodeBlock.START_REGEX.match(line) is not None \
                 and not type(last_open) is Paragraph and not (type(last) is Paragraph and not last.closed) \
                 and not ListItem.starts(last_open, line, line_number, last)
@@ -130,7 +141,8 @@ class IndentedCodeBlock(LeafBlock):
         return instance
 
     def add_line(self, line, stripped=0, lazy=False):
-        line = Document.tab_to_spaces(line, 4, stripped)
+        line = Document.tabs_to_spaces(line, 4, stripped)
+        # Strip first four spaces or less if there are less than four
         if line.strip() or len(line) > 4:
             self.lines.append(line[4:])
         else:
@@ -141,8 +153,10 @@ class IndentedCodeBlock(LeafBlock):
 
     def get_html(self):
         lines = self.lines
+        # Remove trailing blank lines
         while lines and not lines[-1].strip():
             lines = lines[:-1]
+        # Dont't parse as inline
         return self._TEMPLATE.format(content="".join(lines), **self.__dict__)
 
 
@@ -176,28 +190,21 @@ class FencedCodeBlock(LeafBlock):
         return re.compile(self._END_REGEX.format(**self.__dict__))
 
     def add_line(self, line, stripped, lazy=False):
-        line = Document.tab_to_spaces(line, self.indentation, stripped)
+        line = Document.tabs_to_spaces(line, self.indentation, stripped)
+        # Remove spaces up to indentation
         if all(c == " " for c in line[:self.indentation]):
             self.lines.append(line[self.indentation:])
         else:
             self.lines.append(line.lstrip(" "))
 
     def get_html(self):
+        # Don't parse as inline
         return self._TEMPLATE.format(content="".join(self.lines), class_str=self.class_str)
 
 
 class HTMLBlock(LeafBlock):
+    # TODO: Not supported yet
     _TEMPLATE = "{content}"
-
-
-class LinkReferenceDefinition(LeafBlock):
-    _TEMPLATE = "<p><a href=\"{url}\" title=\"{title}\">{content}</a></p>"
-
-    def __init__(self, content, url, title):
-        super().__init__()
-        self.content = content
-        self.url = url
-        self.title = title
 
 
 class Paragraph(LeafBlock):
@@ -220,6 +227,7 @@ class Paragraph(LeafBlock):
 
     def close_check(self, line, line_number, force=False):
         self.close_next = not line.strip() or force
+        # The following interrupt paragraphs
         if (ThematicBreak.START_REGEX.match(line) is not None and SetextHeading.START_REGEX.match(line) is None) \
                 or ATXHeading.START_REGEX.match(line) is not None \
                 or FencedCodeBlock.START_REGEX.match(line) is not None \
@@ -230,10 +238,12 @@ class Paragraph(LeafBlock):
 
     def add_line(self, line, stripped, lazy=False):
         if SetextHeading.starts(None, line, 0, None) and self.lines and not lazy:
+            # Use paragraph as Setext heading
             self.closed = True
             self.setextheading = True
             self.lines.append(line)
         elif not line.strip():
+            # Empty lines closes paragraph
             self.closed = True
         else:
             self.lines.append(line.strip(" \t"))
@@ -260,8 +270,9 @@ class ContainerBlock(Block):
                             for child in self.children]
         return self._TEMPLATE.format(content="".join(children_strings), **self.__dict__)
 
-    def add(self, element):
-        self.children.append(element)
+    def add(self, block):
+        """Add child to this block"""
+        self.children.append(block)
 
     def close_check(self, line, line_number, force=False):
         self.close_next = self.get_end_regex().match(line) is not None or force
@@ -294,6 +305,7 @@ class ListItem(ContainerBlock):
 
     @classmethod
     def starts(cls, last_open, line, line_number, last):
+        # Can only be child of a list
         return (type(last_open) is BulletList or type(last_open) is OrderedList) \
                                                  and ListItem.REGEX.match(line)
 
@@ -302,9 +314,10 @@ class ListItem(ContainerBlock):
         m = cls.REGEX.match(line)
         r = m.groupdict()
         if r['content'] and r['content'].strip():
-            indentation = Document.tab_to_spaces(r['indentation'], -1, stripped + m.start(1))
+            # Blank first line, assume one space for indentation
+            indentation = Document.tabs_to_spaces(r['indentation'], -1, stripped + m.start(1))
         else:
-            indentation = Document.tab_to_spaces(r['indentation'], -1, stripped + m.start(1)).rstrip() + " "
+            indentation = Document.tabs_to_spaces(r['indentation'], -1, stripped + m.start(1)).rstrip() + " "
         whitespaces = re.compile(r".*?(?P<whitespaces>[ ]{5,})\n?$").match(indentation)
         if whitespaces is not None:
             indentation = indentation[:whitespaces.start(1) + 1]
@@ -318,6 +331,7 @@ class ListItem(ContainerBlock):
 
     def strip_line(self, line):
         if line.find("\n") > -1:
+            # Remove only whitespace before newlines
             return line[min(self.indentation, line.find("\n")):]
         else:
             return line[self.indentation:]
@@ -329,6 +343,7 @@ class ListItem(ContainerBlock):
         content = ""
         for child in self.children:
             if not loose and type(child) is Paragraph:
+                # Tight list, don't wrap text into <p>-tags
                 content += "".join(child.lines).strip()
             else:
                 content += child.get_html()
@@ -365,7 +380,9 @@ class List(ContainerBlock):
                 child.close_check(self.strip_line(line), line_number, force=self.close_next)
 
     def is_loose(self):
+        """Check if list is loose"""
         loose = -1 < self.loose < sum([len(c.children) for c in self.children])
+        # Checking for trailing blank lines in sublist that make this list loose
         for child in self.children:
             for l in child.children:
                 if issubclass(type(l), List):
@@ -445,6 +462,7 @@ class Document(ContainerBlock):
 
     @staticmethod
     def new_block(last_open, line, line_number, last, stripped):
+        """Find a new block that starts with this line"""
         block = None
         if type(last_open) is IndentedCodeBlock or type(last_open) is FencedCodeBlock:
             block = None
@@ -472,7 +490,8 @@ class Document(ContainerBlock):
         return block
 
     @staticmethod
-    def tab_to_spaces(line, indentation, stripped):
+    def tabs_to_spaces(line, indentation, stripped):
+        """Convert tabs to spaces with a tab stop of 4"""
         indent = len(line) if indentation < 0 else indentation
         while "\t" in line[:indent]:
             index = line.find("\t")
@@ -480,11 +499,3 @@ class Document(ContainerBlock):
                 line = line.replace("\t", [4, 3, 2, 1][(index + stripped) % 4] * " ", 1)
             indent = len(line) if indentation < 0 else indentation
         return line
-
-    @staticmethod
-    def render_inline(text):
-        bold = r"(?<!\\)[*]{2}(?P<content>.*?)(\\\\)*(?<!\\)[*]{2}"
-        text = re.sub(bold, r"<em>\g<content></em>", text)
-        italic = r"(?<!\\)[*](?P<content>.*?)(\\\\)*(?<!\\)[*]"
-        text = re.sub(italic, r"<i>\g<content></i>", text)
-        return text

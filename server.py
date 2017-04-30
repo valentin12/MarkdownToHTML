@@ -13,14 +13,10 @@ def index():
 
 @app.route("/to-html", methods=["POST"])
 def get_html():
+    """Return converted MD"""
     data = request.get_data(as_text=True)
-    print(data)
-    try:
-        result = GFMParser().parse_text(data).get_html()
-        print(result)
-        return result
-    except:
-        return "Error"
+    result = GFMParser().parse_text(data).get_html()
+    return result
 
 
 if __name__ == "__main__":
