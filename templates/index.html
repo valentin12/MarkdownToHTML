@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" style="height: 100%">
+<head>
+    <meta charset="UTF-8">
+    <title>Markdown to HTML</title>
+</head>
+<body style="height: 100%">
+<h1>Markdown to HTML</h1>
+<p>by Valentin Pratz</p>
+<div style="height: 100%; width: 50%; float:left">
+    <textarea style="height: 100%; width: 98%" title="MD Input" id="input" oninput="load()"></textarea>
+</div>
+<div style="height: 100%; width: 50%; float:left">
+    <textarea style="height: 100%; width: 98%"  title="HTML output" id="output" readonly></textarea>
+</div>
+<script>
+function load() {
+  var xhttp = new XMLHttpRequest({mozSystem: true});
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("output").value =
+      this.responseText;
+    }
+  };
+  xhttp.open("POST", "http://0.0.0.0:8082/to-html", true);
+  xhttp.send(document.getElementById("input").value);
+}
+</script>
+</body>
+</html>
