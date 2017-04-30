@@ -26,10 +26,11 @@ class InlineParser(object):
     @staticmethod
     def parse(input_string):
         parts = [Text(input_string)]
-        parts = InlineParser.compute(InlineParser.get_code_spans, [], parts)
-        parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan], parts)
-        parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan], parts)
-        parts = InlineParser.compute(InlineParser.unescape, [CodeSpan], parts)
+        parts = InlineParser.compute(InlineParser.get_autolinks, [], parts)
+        parts = InlineParser.compute(InlineParser.get_code_spans, [Autolink], parts)
+        parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan, Autolink], parts)
+        parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan, Autolink], parts)
+        parts = InlineParser.compute(InlineParser.unescape, [CodeSpan, Autolink], parts)
         return "".join([e.get_html() for e in parts])
 
     @staticmethod
@@ -48,6 +49,26 @@ class InlineParser(object):
     def look_for_link_or_img():
         # TODO: not supported yet
         pass
+
+    @staticmethod
+    def get_autolinks(text):
+        autolink = re.compile("[\s\S]*?<(?P<link>(?P<scheme>[a-zA-Z][a-zA-Z+-.]+?):[^\s<>]*?)>")
+        pos = 0
+        parts = []
+        while pos < len(text):
+            m = autolink.match(text, pos)
+            if m is not None:
+                r = m.groupdict()
+                if pos != m.start("link") - 1:
+                    # Save text before link
+                    parts.append(Text(text[pos:m.start("link") - 1]))
+                parts.append(Autolink())
+                parts[-1].add(Text(r['link']))
+                pos = m.end()
+            else:
+                parts.append(Text(text[pos:]))
+                break
+        return parts
 
     @staticmethod
     def get_code_spans(text):
@@ -245,7 +266,7 @@ class Text(Inline):
         self.text = text
 
     def get_html(self):
-        return self.text
+        return html.escape(self.text)
 
 
 class CodeSpan(Inline):
@@ -253,3 +274,9 @@ class CodeSpan(Inline):
 
     def get_html(self):
         return self._TEMPLATE.format(content=html.escape("".join([c.get_html() for c in self.children])).strip())
+
+
+class Autolink(Inline):
+    _TEMPLATE = "<a href=\"{link}\">{link}</a>"
+    def get_html(self):
+        return self._TEMPLATE.format(link=self.children[0].get_html())
