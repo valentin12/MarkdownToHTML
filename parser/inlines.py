@@ -24,14 +24,22 @@ import string
 class InlineParser(object):
     @staticmethod
     def parse(input_string):
+        parts = [Text(input_string)]
+        parts = InlineParser.compute(InlineParser.get_code_spans, [], parts)
+        parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan], parts)
+        parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan], parts)
+        return "".join([e.get_html() for e in parts])
+
+    @staticmethod
+    def compute(function, exceptions, parts):
         out = []
-        parts = InlineParser.get_code_spans(input_string)
         for part in parts:
-            if type(part) in [Text]:
-                out.extend(InlineParser.get_emphasis(part.text))
+            if type(part) is Text:
+                out.extend(function(part.text))
             else:
+                part.compute(function, exceptions)
                 out.append(part)
-        return "".join([e.get_html() for e in out])
+        return out
 
 
     @staticmethod
@@ -51,7 +59,26 @@ class InlineParser(object):
                 r = m.groupdict()
                 if pos != m.start('tick'):
                     parts.append(Text(text[pos:m.start('tick')]))
-                parts.append(CodeSpan(r['content']))
+                parts.append(CodeSpan())
+                parts[-1].add(Text(r['content']))
+                pos = m.end()
+            else:
+                parts.append(Text(text[pos:]))
+                break
+        return parts
+
+    @staticmethod
+    def get_hard_breaks(text):
+        hard_break = re.compile(r"[\s\S]*?(?P<break>[ ]{2,}|\t|[\\])\n")
+        pos = 0
+        parts = []
+        if pos == len(text):
+            return [Text(text)]
+        while pos < len(text):
+            m = hard_break.match(text, pos)
+            if m is not None:
+                parts.append(Text(text[pos:m.start("break")].rstrip()))
+                parts.append(HardBreak())
                 pos = m.end()
             else:
                 parts.append(Text(text[pos:]))
@@ -68,7 +95,7 @@ class InlineParser(object):
         while True:
             m = delimiter_regex.match(text, pos)
             if m is not None:
-                parts.append(text[pos:m.end("deli")])
+                parts.append(Text(text[pos:m.end("deli")]))
                 r = m.groupdict()
                 if m.group("deli").startswith("*"):
                     delimiter_stack.append(Delimiter("*", len(m.group("deli")), not r['pre'] and r['post'],
@@ -86,23 +113,24 @@ class InlineParser(object):
                     InlineParser.look_for_link_or_img()
                 pos = m.end("deli")
             else:
-                parts.append(text[pos:])
+                parts.append(Text(text[pos:]))
                 break
         emphs = InlineParser.process_emphasis(delimiter_stack, None)
         used = []
         out = []
         for e in emphs:
-            parts[e[0].position] = parts[e[0].position][:-e[2]]
+            parts[e[0].position].text = parts[e[0].position].text[:-e[2]]
             text = ""
             for i in range(e[0].position + 1, e[1].position):
                 used.append(i)
-                text += parts[i]
-            text += parts[e[1].position][:-e[2]]
+                text += parts[i].text
+            text += parts[e[1].position].text[:-e[2]]
             used.append(e[1].position)
-            out.append((Emphasis(text=text, strong=e[2] > 1), e[0].position + 1))
+            out.append((Emphasis(strong=e[2] > 1), e[0].position + 1))
+            out[-1][0].add(Text(text))
         for i, part in enumerate(parts):
             if i not in used:
-                out.append((Text(part), i))
+                out.append((parts[i], i))
         return [e[0] for e in sorted(out, key=lambda x: x[1])]
 
     @staticmethod
@@ -154,32 +182,60 @@ class Delimiter(object):
 
 
 class Inline(object):
-    pass
+    _TEMPLATE = ""
+
+    def __init__(self):
+        self.children = []
+
+    def get_html(self):
+        return self._TEMPLATE
+
+    def add(self, inline):
+        self.children.append(inline)
+
+    def compute(self, function, exceptions):
+        if type(self) in exceptions:
+            return
+        temp = []
+        for child in self.children:
+            if type(child) is Text:
+                temp.extend(function(child.text))
+            else:
+                child.compute(function, exceptions)
+                temp.append(child)
+        self.children = temp
 
 
 class SoftBreak(Inline):
-    pass
+    _TEMPLATE = "\n"
+
+
+class HardBreak(Inline):
+    _TEMPLATE = "<br />"
+    def get_html(self):
+        return self._TEMPLATE
 
 
 class Emphasis(Inline):
     _TEMPLATE_EM = "<em>{content}</em>"
     _TEMPLATE_STRONG = "<strong>{content}</strong>"
 
-    def __init__(self, text="", strong=False):
-        self.text = text
+    def __init__(self, strong=False):
+        super().__init__()
         self.strong = strong
 
     def get_html(self):
-        if not self.text:
+        if not self.children:
             return ""
         if self.strong:
-            return self._TEMPLATE_STRONG.format(content=self.text)
+            return self._TEMPLATE_STRONG.format(content="".join([c.get_html() for c in self.children]))
         else:
-            return self._TEMPLATE_EM.format(content=self.text)
+            return self._TEMPLATE_EM.format(content="".join([c.get_html() for c in self.children]))
 
 
 class Text(Inline):
     def __init__(self, text=""):
+        super().__init__()
         self.text = text
 
     def get_html(self):
@@ -189,12 +245,5 @@ class Text(Inline):
 class CodeSpan(Inline):
     _TEMPLATE = "<code>{content}</code>"
 
-    def __init__(self, text=""):
-        self.text = text
-
     def get_html(self):
-        return self._TEMPLATE.format(content=self.text.strip())
-
-
-class Code(Inline):
-    REGEX = re.compile("(?P<span>[`]+)(?P<content>[^`].*?)(?<!`)\1(?!`)")
+        return self._TEMPLATE.format(content="".join([c.get_html() for c in self.children]))

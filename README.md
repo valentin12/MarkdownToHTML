@@ -11,7 +11,7 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 * Paragraphs
 * Block Quotes
 * Lists
-* Emphasis
+* Emphasis (partly)
 
 ### Not Supported
 * All inlines except for emphasis
