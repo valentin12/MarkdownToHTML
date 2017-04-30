@@ -89,7 +89,7 @@ class ThematicBreak(LeafBlock):
 
 class ATXHeading(LeafBlock):
     _TEMPLATE = "<h{number}>{content}</h{number}>\n"
-    REGEX = re.compile(r"^ {0,3}(?P<number>[#]{1,6})([ \t]|$)(?P<content>.*?(?:\#*))[ \t]*(?:[#]{2,})? *\n?$")
+    REGEX = re.compile(r"^ {0,3}(?P<number>[#]{1,6})([ \t]|$)(?P<content>.*?(?:(\\#)*))[ \t]*(?:[#]{2,})? *\n?$")
     START_REGEX = re.compile(r"^ {0,3}(?P<number>[#]{1,6})([ \t]|$)")
 
     def __init__(self, number=1):
@@ -119,7 +119,8 @@ class IndentedCodeBlock(LeafBlock):
     @classmethod
     def starts(cls, last_open, line, line_number, last):
         return IndentedCodeBlock.START_REGEX.match(line) is not None \
-                and not type(last_open) is Paragraph and not (type(last) is Paragraph and not last.closed)
+                and not type(last_open) is Paragraph and not (type(last) is Paragraph and not last.closed) \
+                and not ListItem.starts(last_open, line, line_number, last)
 
     @classmethod
     def create(cls, line, line_number, stripped=0):
@@ -162,6 +163,7 @@ class FencedCodeBlock(LeafBlock):
 
     def close_check(self, line, line_number, force=False):
         self.close_next = self.get_end_regex().match(line) is not None
+        self.closed = self.closed or force
 
     def get_end_regex(self):
         return re.compile(self._END_REGEX.format(**self.__dict__))
@@ -274,12 +276,13 @@ class BlockQuote(ContainerBlock):
 
 class ListItem(ContainerBlock):
     _TEMPLATE = "<li>{content}</li>\n"
-    REGEX = re.compile(r"^(?P<indentation>[ ]{0,3}(([\d]{1,9}[.)])|[\-+*])[ \t]*)(?P<content>.*\n?)$")
+    _NEWLINE_TEMPLATE = "<li>\n{content}\n</li>\n"
+    REGEX = re.compile(r"^(?P<indentation>[ ]*(([\d]{1,9}[.)])|[\-+*])[ \t]*)(?P<content>.*\n?)$")
     _END_REGEX = r"^[ ]{{0,{indentation}}}\S.*"
 
     def __init__(self,indentation, start_line):
         super().__init__()
-        self.indentation = indentation
+        self.indentation = max(indentation, 2)
         self.start_line = start_line
 
     @classmethod
@@ -291,7 +294,10 @@ class ListItem(ContainerBlock):
     def create(cls, line, line_number, stripped):
         m = cls.REGEX.match(line)
         r = m.groupdict()
-        indentation = Document.tab_to_spaces(r['indentation'], -1, stripped + m.start(1))
+        if r['content'] and r['content'].strip():
+            indentation = Document.tab_to_spaces(r['indentation'], -1, stripped + m.start(1))
+        else:
+            indentation = Document.tab_to_spaces(r['indentation'], -1, stripped + m.start(1)).rstrip() + " "
         whitespaces = re.compile(r".*?(?P<whitespaces>[ ]{5,})\n?$").match(indentation)
         if whitespaces is not None:
             indentation = indentation[:whitespaces.start(1) + 1]
@@ -304,7 +310,10 @@ class ListItem(ContainerBlock):
                 child.close_check(self.strip_line(line), line_number, force=self.close_next)
 
     def strip_line(self, line):
-        return line[self.indentation:]
+        if line.find("\n") > -1:
+            return line[min(self.indentation, line.find("\n")):]
+        else:
+            return line[self.indentation:]
 
     def get_end_regex(self):
         return re.compile(self._END_REGEX.format(indentation=self.indentation - 1))
@@ -313,9 +322,11 @@ class ListItem(ContainerBlock):
         content = ""
         for child in self.children:
             if not loose and type(child) is Paragraph:
-                content += "".join(child.lines)
+                content += "".join(child.lines).strip()
             else:
                 content += child.get_html()
+        if loose:
+            return self._NEWLINE_TEMPLATE.format(content=content.strip())
         return self._TEMPLATE.format(content=content.strip())
 
 
@@ -333,33 +344,49 @@ class List(ContainerBlock):
         return line[self.indentation:]
 
     def get_html(self):
-        loose = -1 < self.loose < sum([len(c.children) for c in self.children])
         content = ""
         for child in self.children:
-            content += child.get_html(loose=loose)
+            content += child.get_html(loose=self.is_loose())
         return self._TEMPLATE.format(content=content, **self.__dict__)
 
     def close_check(self, line, line_number, force=False):
-        self.close_next = self.get_end_regex().match(line) \
+        self.close_next = self.get_end_regex().match(line) is not None \
                           or ThematicBreak.starts(None, line, line_number, None) \
                           or force
         for child in self.children:
             if not child.closed:
                 child.close_check(self.strip_line(line), line_number, force=self.close_next)
 
+    def is_loose(self):
+        loose = -1 < self.loose < sum([len(c.children) for c in self.children])
+        for child in self.children:
+            for l in child.children:
+                if issubclass(type(l), List):
+                    if l.loose > -1 and not l.is_loose() and l is not self.children[-1].children[-1]:
+                        # Empty line at end of list
+                        return True
+        return loose
+
+
 
 class OrderedList(List):
-    _TEMPLATE = "<ol{start}>\n{content}\n</ol>"
-    START_REGEX = re.compile(r"^(?P<indentation>[ ]{0,3})(?P<start>[\d]{1,9})(?P<marker>[.)])[ \t]*")
+    _TEMPLATE = "<ol{start}>\n{content}\n</ol>\n"
+    START_REGEX = re.compile(r"^(?P<indentation>[ ]{0,3})(?P<start>[\d]{1,9})(?P<marker>[.)])([ \t]|$)")
     _END_REGEX = r"^(?!([\d]{{1,9}}[{marker}])|(?![ ]{{0,{indentation}}}\S.*))"
-    _ALT_END_REGEX = r"^(?![\d]{{1,9}}[{marker}])"
+    _ALT_END_REGEX = r"^(?![\d]{{1,9}}[{marker}]|\s$|[ \t])"
 
     def __init__(self, indentation, start, marker):
         super().__init__(indentation)
         self.start_num = start
-        self.start = " start={start}".format(start=start) if start != 1 else ""
+        self.start = " start=\"{start}\"".format(start=start) if start != 1 else ""
         self.marker = marker
         self.indentation = indentation
+
+    @classmethod
+    def starts(cls, last_open, line, line_number, last):
+        return cls.START_REGEX.match(line) is not None \
+               and not ListItem.starts(last_open, line, line_number, None) \
+               and not (type(last_open) is Paragraph and cls.START_REGEX.match(line).groupdict()['start'] != 1)
 
     @classmethod
     def create(cls, line, line_number, stripped):

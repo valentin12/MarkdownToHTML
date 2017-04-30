@@ -2,5 +2,5 @@
 from parser.gfm import GFMParser
 
 p = GFMParser()
-p.parse_text("- one\n\n two\n")
+p.parse_text("-   \n  foo\n")
 print(p.get_html())
