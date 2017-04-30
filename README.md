@@ -15,6 +15,7 @@ It's based on the [GitHub Flavored Markdown Spec](https://github.github.com/gfm/
 * Code spans
 * Hard line breaks
 * Escaped characters (partly)
+* Autolinks
 
 ### Not Supported
 * All inlines not named above
@@ -59,4 +60,4 @@ $ cd CommonMark/
 $ ./test/spec_tests.py -p ~/MarkdownToHTML/run_tests.py
 ```
 
-Currently 320 of 621 tests pass
+Currently 357 of 621 tests pass

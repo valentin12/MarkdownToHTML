@@ -27,10 +27,11 @@ class InlineParser(object):
     def parse(input_string):
         parts = [Text(input_string)]
         parts = InlineParser.compute(InlineParser.get_autolinks, [], parts)
-        parts = InlineParser.compute(InlineParser.get_code_spans, [Autolink], parts)
-        parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan, Autolink], parts)
-        parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan, Autolink], parts)
-        parts = InlineParser.compute(InlineParser.unescape, [CodeSpan, Autolink], parts)
+        parts = InlineParser.compute(InlineParser.get_emailautolinks, [Autolink], parts)
+        parts = InlineParser.compute(InlineParser.get_code_spans, [Autolink, EMailAutolink], parts)
+        parts = InlineParser.compute(InlineParser.get_emphasis, [CodeSpan, Autolink, EMailAutolink], parts)
+        parts = InlineParser.compute(InlineParser.get_hard_breaks, [CodeSpan, Autolink, EMailAutolink], parts)
+        parts = InlineParser.compute(InlineParser.unescape, [CodeSpan, Autolink, EMailAutolink], parts)
         return "".join([e.get_html() for e in parts])
 
     @staticmethod
@@ -64,6 +65,26 @@ class InlineParser(object):
                     parts.append(Text(text[pos:m.start("link") - 1]))
                 parts.append(Autolink())
                 parts[-1].add(Text(r['link']))
+                pos = m.end()
+            else:
+                parts.append(Text(text[pos:]))
+                break
+        return parts
+
+    @staticmethod
+    def get_emailautolinks(text):
+        autolink = re.compile("[\s\S]*?<(?P<address>[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>")
+        pos = 0
+        parts = []
+        while pos < len(text):
+            m = autolink.match(text, pos)
+            if m is not None:
+                r = m.groupdict()
+                if pos != m.start("address") - 1:
+                    # Save text before link
+                    parts.append(Text(text[pos:m.start("address") - 1]))
+                parts.append(EMailAutolink())
+                parts[-1].add(Text(r['address']))
                 pos = m.end()
             else:
                 parts.append(Text(text[pos:]))
@@ -277,6 +298,15 @@ class CodeSpan(Inline):
 
 
 class Autolink(Inline):
-    _TEMPLATE = "<a href=\"{link}\">{link}</a>"
+    _TEMPLATE = "<a href=\"{link}\">{text}</a>"
     def get_html(self):
-        return self._TEMPLATE.format(link=self.children[0].get_html())
+        text = self.children[0].get_html()
+        return self._TEMPLATE.format(link=text, text=text)
+
+
+class EMailAutolink(Inline):
+    _TEMPLATE = "<a href=\"mailto:{link}\">{text}</a>"
+
+    def get_html(self):
+        text = self.children[0].get_html()
+        return self._TEMPLATE.format(link=text, text=text)
