@@ -354,7 +354,7 @@ class List(ContainerBlock):
         content = ""
         for child in self.children:
             content += child.get_html(loose=self.is_loose())
-        return self._TEMPLATE.format(content=content, **self.__dict__)
+        return self._TEMPLATE.format(content=content.strip("\n"), **self.__dict__)
 
     def close_check(self, line, line_number, force=False):
         self.close_next = self.get_end_regex().match(line) is not None \

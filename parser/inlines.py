@@ -1,23 +1,57 @@
 #!/usr/bin/python3
 import re
+import string
 
 
 class InlineParser(object):
     @staticmethod
     def parse(input_string):
-        parts = []
-        delimiter_stack = []
-        delimiter_regex = re.compile(r"(.|\n)*?(?P<pre>\S?)(?P<deli>[*]+|[_]+|\[|!\[|])(?P<post>\S?)")
+        code = re.compile(r"[\s\S]*?(?P<tick>`+)(?P<content>[\s\S]*?)(?<=[^`])\1((?!`)|$)")
         pos = 0
-        while True:
-            m = delimiter_regex.match(input_string, pos)
+        parts = []
+        while pos < len(input_string):
+            m = code.match(input_string, pos)
             if m is not None:
-                parts.append(input_string[pos:m.end("deli")])
+                r = m.groupdict()
+                if pos != m.start('tick'):
+                    parts.append(Text(input_string[pos:m.start('tick')]))
+                parts.append(CodeSpan(r['content']))
+                pos = m.end()
+            else:
+                parts.append(Text(input_string[pos:]))
+                break
+        out = []
+        for part in parts:
+            if type(part) in [Text]:
+                out.extend(InlineParser.get_emphasis(part.text))
+            else:
+                out.append(part)
+        return "".join([e.get_html() for e in out])
+
+
+    @staticmethod
+    def look_for_link_or_img():
+        pass
+
+    @staticmethod
+    def get_emphasis(text):
+        delimiter_stack = []
+        delimiter_regex = re.compile(r"[\s\S]*?(?P<pre>[^_*\s\]!\[]?)(?P<deli>[*]+|[_]+|\[|!\[|])(?P<post>\S?)")
+        pos = 0
+        parts = []
+        while True:
+            m = delimiter_regex.match(text, pos)
+            if m is not None:
+                parts.append(text[pos:m.end("deli")])
                 r = m.groupdict()
                 if m.group("deli").startswith("*"):
-                    delimiter_stack.append(Delimiter("*", len(m.group("deli")), not r['pre'] and r['post'], r['pre'], len(parts) - 1))
+                    delimiter_stack.append(Delimiter("*", len(m.group("deli")), not r['pre'] and r['post'],
+                                                     r['pre'],
+                                                     len(parts) - 1))
                 elif m.group("deli").startswith("_"):
-                    delimiter_stack.append(Delimiter("_", len(m.group("deli")), not r['pre'] and r['post'], r['pre'], len(parts) - 1))
+                    delimiter_stack.append(Delimiter("_", len(m.group("deli")),
+                                                     (not r['pre'] or r['pre'] in string.punctuation) and r['post'],
+                                                     r['pre'], len(parts) - 1))
                 elif m.group("deli") == "[":
                     delimiter_stack.append(Delimiter("[", 1, True, True, len(parts) - 1))
                 elif m.group("deli") == "![":
@@ -26,39 +60,24 @@ class InlineParser(object):
                     InlineParser.look_for_link_or_img()
                 pos = m.end("deli")
             else:
-                parts.append(input_string[pos:])
+                parts.append(text[pos:])
                 break
         emphs = InlineParser.process_emphasis(delimiter_stack, None)
+        used = []
         out = []
+        for e in emphs:
+            parts[e[0].position] = parts[e[0].position][:-e[2]]
+            text = ""
+            for i in range(e[0].position + 1, e[1].position):
+                used.append(i)
+                text += parts[i]
+            text += parts[e[1].position][:-e[2]]
+            used.append(e[1].position)
+            out.append((Emphasis(text=text, strong=e[2] > 1), e[0].position + 1))
         for i, part in enumerate(parts):
-            sub = []
-            strip = 0
-            for e in emphs:
-                if e[0].position == i:
-                    strip += e[2]
-                    if e[2] == 1:
-                        sub.append("<em>")
-                    elif e[2] == 2:
-                        sub.append("<strong>")
-                elif e[1].position == i:
-                    strip += e[2]
-                    if e[2] == 1:
-                        sub.append("</em>")
-                    elif e[2] == 2:
-                        sub.append("</strong>")
-            if strip:
-                sub.append(part[:-strip])
-            else:
-                sub.append(part)
-            out.extend(sub[::-1])
-        if not parts:
-            return input_string
-        return "".join(out)
-
-
-    @staticmethod
-    def look_for_link_or_img():
-        pass
+            if i not in used:
+                out.append((Text(part), i))
+        return [e[0] for e in sorted(out, key=lambda x: x[1])]
 
     @staticmethod
     def process_emphasis(delimiter_stack, stack_bottom):
@@ -90,14 +109,12 @@ class InlineParser(object):
                         emphs.append((other, cur_del, 1))
                         cur_del.number -= 1
                         other.number -= 1
-                    if cur_del.number == 0:
-                        cur_del.active = False
-                    if other.number == 0:
-                        other.active = False
+                    for e in delimiter_stack:
+                        if other.position <= e.position <= cur_del.position:
+                            e.active = False
                     break
             current_position += 1
         return emphs
-
 
 
 class Delimiter(object):
@@ -119,11 +136,38 @@ class SoftBreak(Inline):
 
 
 class Emphasis(Inline):
-    pass
+    _TEMPLATE_EM = "<em>{content}</em>"
+    _TEMPLATE_STRONG = "<strong>{content}</strong>"
+
+    def __init__(self, text="", strong=False):
+        self.text = text
+        self.strong = strong
+
+    def get_html(self):
+        if not self.text:
+            return ""
+        if self.strong:
+            return self._TEMPLATE_STRONG.format(content=self.text)
+        else:
+            return self._TEMPLATE_EM.format(content=self.text)
 
 
 class Text(Inline):
-    pass
+    def __init__(self, text=""):
+        self.text = text
+
+    def get_html(self):
+        return self.text
+
+
+class CodeSpan(Inline):
+    _TEMPLATE = "<code>{content}</code>"
+
+    def __init__(self, text=""):
+        self.text = text
+
+    def get_html(self):
+        return self._TEMPLATE.format(content=self.text.strip())
 
 
 class Code(Inline):
